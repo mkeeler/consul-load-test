@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"time"
 
 	petname "github.com/dustinkirkland/golang-petname"
 	"github.com/hashicorp/consul/api"
 	"github.com/mkeeler/consul-data/generate/generators"
+	"github.com/mkeeler/consul-load-test/metrics"
 	"golang.org/x/time/rate"
 )
 
@@ -62,7 +64,7 @@ func (c *KVConfig) Normalize() error {
 	return nil
 }
 
-func kvLoad(ctx context.Context, client *api.Client, conf Config) {
+func kvLoad(ctx context.Context, client *api.Client, conf Config, metricsServer *metrics.MetricsServer) {
 	limiter := rate.NewLimiter(conf.KV.UpdateRate, int(conf.KV.UpdateRate*10))
 
 	keys := make([]string, conf.KV.NumKeys)
@@ -91,11 +93,18 @@ func kvLoad(ctx context.Context, client *api.Client, conf Config) {
 			Value: []byte(value),
 		}
 
-		go sendKey(client, &pair)
+		go sendKey(client, &pair, metricsServer)
 	}
 
 }
 
-func sendKey(client *api.Client, pair *api.KVPair) {
+func sendKey(client *api.Client, pair *api.KVPair, metricsServer *metrics.MetricsServer) {
+	if metricsServer != nil {
+		start := time.Now()
+		defer func() {
+			duration := time.Since(start)
+			metricsServer.IncLatencyHistogram("kv", duration)
+		}()
+	}
 	_, _ = client.KV().Put(pair, nil)
 }
