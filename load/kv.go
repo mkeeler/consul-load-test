@@ -64,47 +64,54 @@ func (c *KVConfig) Normalize() error {
 	return nil
 }
 
-func kvLoad(ctx context.Context, client *api.Client, conf Config, metricsServer *metrics.MetricsServer) {
-	limiter := rate.NewLimiter(conf.KV.UpdateRate, int(conf.KV.UpdateRate*10))
+func kvLoad(ctx context.Context, client *api.Client, conf Config, metricsServer *metrics.MetricsServer) <-chan struct{} {
+	done := make(chan struct{})
 
-	keys := make([]string, conf.KV.NumKeys)
+	go func() {
+		defer close(done)
+		limiter := rate.NewLimiter(conf.KV.UpdateRate, int(conf.KV.UpdateRate*10))
 
-	for i := 0; i < conf.KV.NumKeys; i++ {
-		keys[i] = petname.Generate(conf.KV.KeySegments, conf.KV.KeySeparator)
-	}
+		keys := make([]string, conf.KV.NumKeys)
 
-	valueGen := generators.RandomB64Generator(conf.KV.MinValueSize, conf.KV.MaxValueSize)
-
-	for {
-		err := limiter.Wait(ctx)
-		if err != nil {
-			return
+		for i := 0; i < conf.KV.NumKeys; i++ {
+			keys[i] = petname.Generate(conf.KV.KeySegments, conf.KV.KeySeparator)
 		}
 
-		key := keys[rand.Intn(len(keys))]
+		valueGen := generators.RandomB64Generator(conf.KV.MinValueSize, conf.KV.MaxValueSize)
 
-		value, err := valueGen()
-		if err != nil {
-			panic(err)
+		for {
+			err := limiter.Wait(ctx)
+			if err != nil {
+				return
+			}
+
+			key := keys[rand.Intn(len(keys))]
+
+			value, err := valueGen()
+			if err != nil {
+				panic(err)
+			}
+
+			pair := api.KVPair{
+				Key:   key,
+				Value: []byte(value),
+			}
+
+			go sendKey(client, &pair, metricsServer)
 		}
-
-		pair := api.KVPair{
-			Key:   key,
-			Value: []byte(value),
-		}
-
-		go sendKey(client, &pair, metricsServer)
-	}
-
+	}()
+	return done
 }
 
 func sendKey(client *api.Client, pair *api.KVPair, metricsServer *metrics.MetricsServer) {
+	start := time.Now()
+	_, err := client.KV().Put(pair, nil)
 	if metricsServer != nil {
-		start := time.Now()
-		defer func() {
-			duration := time.Since(start)
-			metricsServer.IncLatencyHistogram("kv", duration)
-		}()
+		duration := time.Since(start)
+		if err == nil {
+			metricsServer.IncLatencyHistogram(duration, "kv", "success")
+		} else {
+			metricsServer.IncLatencyHistogram(duration, "kv", "error")
+		}
 	}
-	_, _ = client.KV().Put(pair, nil)
 }
