@@ -25,7 +25,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    "consul_load_request_latency_seconds",
 			Help:    "consul request latency (seconds).",
-			Buckets: []float64{0.02, 0.05, .1, .2, .4, .8, 1, 3},
+			Buckets: []float64{0.02, 0.05, .1, .2, .4, .8, 1, 30, 60, 120, 180},
 		},
 		requestTypeLabels,
 	)
