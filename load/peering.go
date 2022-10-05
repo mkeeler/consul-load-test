@@ -317,9 +317,10 @@ func establishPeerings(ctx context.Context, acceptorCli *api.Client, peeringClis
 		go func() {
 			defer wg.Done()
 			peerName := strings.ReplaceAll(conf.Peering.PeeringClusters[cid], ":", "-")
+			peerName = strings.ReplaceAll(peerName, ".", "-")
 			err := peerClusters(ctx, acceptorCli, peeringCli, peerName)
 			if err != nil {
-				log.Errorf("error peering with cluster: %v", conf.Peering.PeeringClusters[cid])
+				log.Errorf("error peering with cluster %v: %v", conf.Peering.PeeringClusters[cid], err)
 				return
 			}
 
