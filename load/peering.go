@@ -3,6 +3,7 @@ package load
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -166,13 +167,13 @@ func doLoad(ctx context.Context, cid int, acceptorCli *api.Client, cluster *peer
 					if metricsServer != nil {
 						metricsServer.IncLatencyHistogram(time.Since(t), "peering", "timeout")
 					}
-					log.Infof("[%d] ===> service is exported: timeout", cid)
+					log.Infof("[%d] ===> service is exported: %s (timeout)", cid, svcName)
 					break work
 				case <-waitExportServiceCh:
 					if metricsServer != nil {
 						metricsServer.IncLatencyHistogram(time.Since(t), "peering", "success")
 					}
-					log.Infof("[%d] ===> service is exported: after %s", cid, time.Since(t))
+					log.Infof("[%d] ===> service is exported: %s after %s", cid, svcName, time.Since(t))
 					break work
 				case <-ctx.Done():
 					log.Infof("[%d] ===> doLoad exit by ctx.Done()!", cid)
@@ -206,6 +207,14 @@ func getImportedHealthService(ctx context.Context, cli *api.Client, addr string,
 		return 0, fmt.Errorf("error get service: %v", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return 0, fmt.Errorf("error get health service: code=%v; read error=%v", resp.StatusCode, string(bodyBytes))
+		}
+		return 0, fmt.Errorf("error get health service: code=%v; http error=%v", resp.StatusCode, string(bodyBytes))
+	}
 
 	header := resp.Header
 
