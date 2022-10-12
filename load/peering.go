@@ -3,10 +3,6 @@ package load
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -124,15 +120,16 @@ func doLoad(ctx context.Context, cid int, acceptorCli *api.Client, cluster *peer
 			}
 			log.Infof("[%d] service registered", cid)
 
-			// TODO use health API after peer parameter is added.
-			// acceptorCli.Health().Service("foo", "", false, &api.QueryOptions{})
-			// - get service from the peered cluster: empty expected; otherwise skip
-			index, err := getImportedHealthService(ctx, cluster.cli, cluster.addr, svcName, 0)
+			// Get the index from health endpoint: non-blocking query
+			_, meta, err := cluster.cli.Health().Service(svcName, "", false, &api.QueryOptions{
+				Peer: acceptorPeerName,
+			})
 			if err != nil {
-				log.Warnf("[%d] error get service %v", cid, err)
+				log.Warnf("[%d] error get service health %s: %v", cid, svcName, err)
 				continue
 			}
-			log.Infof("[%d] getImportedHealthService consul-index: %d", cid, index)
+			index := meta.LastIndex
+			log.Infof("[%d] health service consul-index: %s, %d", cid, svcName, meta.LastIndex)
 
 			waitExportedService := func() <-chan struct{} {
 				doneCh := make(chan struct{})
@@ -141,10 +138,12 @@ func doLoad(ctx context.Context, cid int, acceptorCli *api.Client, cluster *peer
 					defer close(doneCh)
 					log.Infof("[%d] waiting for exported service %s", cid, svcName)
 
-					// return if the service is exported
-					_, err = getImportedHealthService(ctx, cluster.cli, cluster.addr, svcName, int(index))
+					_, _, err := cluster.cli.Health().Service(svcName, "", false, &api.QueryOptions{
+						Peer:      acceptorPeerName,
+						WaitIndex: index,
+					})
 					if err != nil {
-						log.Warnf("[%d] error wait on getting service %v", cid, err)
+						log.Warnf("[%d] error wait on service health %s: %v", cid, svcName, err)
 						return
 					}
 				}()
@@ -186,51 +185,11 @@ func doLoad(ctx context.Context, cid int, acceptorCli *api.Client, cluster *peer
 	return done
 }
 
-func getImportedHealthService(ctx context.Context, cli *api.Client, addr string, service string, index int) (uint64, error) {
-	u := url.URL{
-		Scheme: "http",
-		Host:   addr,
-		Path:   "/v1/health/service/" + service,
-	}
-	q := u.Query()
-	q.Add("peer", acceptorPeerName)
-
-	if index != 0 {
-		indexStr := fmt.Sprintf("%d", index)
-		q.Add("index", indexStr)
-	}
-
-	u.RawQuery = q.Encode()
-
-	resp, err := http.Get(u.String())
-	if err != nil {
-		return 0, fmt.Errorf("error get service: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return 0, fmt.Errorf("error get health service: code=%v; read error=%v", resp.StatusCode, string(bodyBytes))
-		}
-		return 0, fmt.Errorf("error get health service: code=%v; http error=%v", resp.StatusCode, string(bodyBytes))
-	}
-
-	header := resp.Header
-
-	retIndex := uint64(0)
-	if indexStr := header.Get("X-Consul-Index"); indexStr != "" {
-		retIndex, err = strconv.ParseUint(indexStr, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("failed to parse X-Consul-Index: %v", err)
-		}
-	}
-	return retIndex, nil
-}
-
 func registerService(ctx context.Context, agent *api.Agent, svcName string) error {
+	timestamp := fmt.Sprintf("time: %v", time.Now().UnixMilli())
 	svc := &api.AgentServiceRegistration{
 		Name: svcName,
+		Tags: []string{timestamp},
 	}
 	err := agent.ServiceRegister(svc)
 	if err != nil {

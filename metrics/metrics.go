@@ -85,6 +85,10 @@ func KVLoadReport(addr string, duration time.Duration) error {
 	defer cancel()
 
 	interval := duration.Round(time.Second).String()
+
+	// Total requests:
+
+	// Percentil:
 	getPercentile := func(percentile string) error {
 
 		queryLatencyPercentile := "histogram_quantile(%s, sum(rate(consul_load_request_latency_seconds_bucket[%s])) by (le))"
