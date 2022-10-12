@@ -259,7 +259,7 @@ func exportService(ctx context.Context, cli *api.Client, svcName string, peerNam
 					Name: svcName,
 					Consumers: []api.ServiceConsumer{
 						{
-							PeerName: peerName,
+							Peer: peerName,
 						},
 					},
 				},
@@ -271,7 +271,7 @@ func exportService(ctx context.Context, cli *api.Client, svcName string, peerNam
 			Name: svcName,
 			Consumers: []api.ServiceConsumer{
 				{
-					PeerName: peerName,
+					Peer: peerName,
 				},
 			},
 		})
