@@ -139,7 +139,11 @@ func (c *loadCommand) Run(args []string) int {
 	}()
 
 	start := time.Now()
-	load.Load(ctx, client, conf, metricsServer)
+	loadDone := load.Load(ctx, client, conf, metricsServer)
+	fmt.Println("Load started")
+
+	<-loadDone
+	fmt.Println("Load completed")
 	if metricsServer != nil && c.reportAddr != "" {
 		metrics.KVLoadReport(c.reportAddr, time.Since(start))
 	}

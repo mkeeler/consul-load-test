@@ -13,12 +13,15 @@ const (
 )
 
 type Config struct {
-	KV KVConfig
+	KV      *KVConfig
+	Peering *PeeringConfig
 }
 
 func (c *Config) Normalize() error {
-	if err := c.KV.Normalize(); err != nil {
-		return fmt.Errorf("error validating KV configuration: %w", err)
+	if c.KV != nil {
+		if err := c.KV.Normalize(); err != nil {
+			return fmt.Errorf("error validating KV configuration: %w", err)
+		}
 	}
 
 	return nil

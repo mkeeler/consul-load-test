@@ -17,7 +17,7 @@ import (
 // Follow Prometheus naming practices
 // https://prometheus.io/docs/practices/naming/
 var (
-	requestTypeLabels = []string{"requestType"}
+	requestTypeLabels = []string{"requestType", "status"}
 )
 
 var (
@@ -25,7 +25,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    "consul_load_request_latency_seconds",
 			Help:    "consul request latency (seconds).",
-			Buckets: []float64{0.02, 0.05, .1, .2, .4, .6, .8, 1},
+			Buckets: []float64{0.02, 0.05, .1, .2, .4, .8, 1, 30, 60, 120, 180},
 		},
 		requestTypeLabels,
 	)
@@ -67,8 +67,8 @@ func NewMetricsServer(cfg ServerConfig) *MetricsServer {
 }
 
 // IncLatencyHistogram add an observed measurment of request latency
-func (m *MetricsServer) IncLatencyHistogram(requestType string, duration time.Duration) {
-	m.latencyHistogram.WithLabelValues(requestType).Observe(duration.Seconds())
+func (m *MetricsServer) IncLatencyHistogram(duration time.Duration, lvs ...string) {
+	m.latencyHistogram.WithLabelValues(lvs...).Observe(duration.Seconds())
 }
 
 func KVLoadReport(addr string, duration time.Duration) error {
@@ -85,6 +85,10 @@ func KVLoadReport(addr string, duration time.Duration) error {
 	defer cancel()
 
 	interval := duration.Round(time.Second).String()
+
+	// Total requests:
+
+	// Percentil:
 	getPercentile := func(percentile string) error {
 
 		queryLatencyPercentile := "histogram_quantile(%s, sum(rate(consul_load_request_latency_seconds_bucket[%s])) by (le))"
