@@ -22,7 +22,7 @@ const (
 
 // KVConfig is the configuration for the KV load generator
 type PeeringConfig struct {
-	// UpdateRate is the number of KV updates per second
+	// UpdateRate time in seconds between peered service registrations
 	UpdateRate rate.Limit
 
 	PeeringClusters []string
