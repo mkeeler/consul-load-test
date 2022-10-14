@@ -15,16 +15,15 @@ func Load(ctx context.Context, client *api.Client, conf Config, metricsServer *m
 		defer close(done)
 
 		var loadDone <-chan struct{}
-		loadType := getLoadType(conf)
-		switch loadType {
-		case "KV":
+		switch conf.Target {
+		case TargetKV:
 			fmt.Println("Starting kv load")
 			loadDone = kvLoad(ctx, client, conf, metricsServer)
-		case "Peering":
+		case TargetPeering:
 			fmt.Println("Starting peering load")
 			loadDone = peeringLoad(ctx, client, conf, metricsServer)
 		default:
-			fmt.Println("error: invalid load type:", loadType)
+			fmt.Println("error: invalid load type:", conf.Target)
 			return
 		}
 
@@ -33,25 +32,4 @@ func Load(ctx context.Context, client *api.Client, conf Config, metricsServer *m
 	}()
 
 	return done
-}
-
-func getLoadType(conf Config) string {
-	loadType := ""
-
-	numLoadType := 0
-
-	if conf.KV != nil {
-		loadType = "KV"
-		numLoadType++
-	}
-
-	if conf.Peering != nil {
-		loadType = "Peering"
-		numLoadType++
-	}
-
-	if numLoadType != 1 {
-		return ""
-	}
-	return loadType
 }
