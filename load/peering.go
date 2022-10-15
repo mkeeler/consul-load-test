@@ -20,19 +20,36 @@ const (
 	acceptorPeerName = "acceptor"
 )
 
-// KVConfig is the configuration for the KV load generator
+var defaultExportTimeout = time.Duration(180 * time.Second)
+
+// PeeringConfig is the configuration for the Peering load generator
 type PeeringConfig struct {
-	// UpdateRate time in seconds between peered service registrations
-	UpdateRate rate.Limit
-
+	// RegisterLimit is the time in seconds to wait between registering services
+	RegisterLimit rate.Limit
+	// ExportTimeout is the maximum time to wait for services to become exported to a remote peer
+	ExportTimeout time.Duration
+	// PeeringClusters holds the addresses for the servers that will be peered
 	PeeringClusters []string
-
+	// NumServices is the number of services to register and export during the load test
 	NumServices int
 }
 
-// peeringCluster represents a peering connection from the
-//
-//	acceptor to the peer cluster.
+// Normalize validates the Peering load test configuration. RegisterLimit and
+// NumServices must not be zero, otherwise, an error is returned.
+func (c *PeeringConfig) Normalize() error {
+	if c.RegisterLimit == 0.0 {
+		return fmt.Errorf("invalid RegisterLimit configuration: %v", c.RegisterLimit)
+	}
+	if c.NumServices == 0 {
+		return fmt.Errorf("invalid NumServices configuration: %v", c.NumServices)
+	}
+	if c.ExportTimeout == 0 {
+		c.ExportTimeout = defaultExportTimeout
+	}
+	return nil
+}
+
+// peeringCluster represents a peering connection from the acceptor to the peer cluster.
 type peeringCluster struct {
 	// the cli of the peered cluster
 	cli      *api.Client
@@ -92,7 +109,7 @@ func generateLoad(ctx context.Context, acceptorCli *api.Client, peerClusters []*
 }
 
 func doLoad(ctx context.Context, cid int, acceptorCli *api.Client, cluster *peeringCluster, conf PeeringConfig, metricsServer *metrics.MetricsServer) <-chan struct{} {
-	limiter := rate.NewLimiter(conf.UpdateRate, int(conf.UpdateRate*2))
+	limiter := rate.NewLimiter(conf.RegisterLimit, int(conf.NumServices))
 	done := make(chan struct{})
 
 	go func() {
@@ -105,16 +122,15 @@ func doLoad(ctx context.Context, cid int, acceptorCli *api.Client, cluster *peer
 			default:
 			}
 
-			err := limiter.Wait(ctx)
-			if err != nil {
+			if err := limiter.Wait(ctx); err != nil {
 				log.Infof("[%d] limiter exit", cid)
 				return
 			}
 			agent := acceptorCli.Agent()
 			svcName := petname.Name()
+
 			log.Infof("[%d] ===> registering service %s", cid, svcName)
-			err = registerService(ctx, agent, svcName)
-			if err != nil {
+			if err := registerService(ctx, agent, svcName); err != nil {
 				log.Warnf("[%d] error registerService %v", cid, err)
 				continue
 			}
@@ -138,6 +154,9 @@ func doLoad(ctx context.Context, cid int, acceptorCli *api.Client, cluster *peer
 					defer close(doneCh)
 					log.Infof("[%d] waiting for exported service %s", cid, svcName)
 
+					// Use the index from the health endpoint response above to
+					// issue a blocking query; this will block until the service
+					// has been exported to the peer.
 					_, _, err := cluster.cli.Health().Service(svcName, "", false, &api.QueryOptions{
 						Peer:      acceptorPeerName,
 						WaitIndex: index,
@@ -152,9 +171,8 @@ func doLoad(ctx context.Context, cid int, acceptorCli *api.Client, cluster *peer
 			waitExportServiceCh := waitExportedService()
 
 			t := time.Now()
-			err = exportService(context.Background(), acceptorCli, svcName, cluster.peerName)
 
-			if err != nil {
+			if err := exportService(context.Background(), acceptorCli, svcName, cluster.peerName); err != nil {
 				log.Errorf("[%d] error export service %v", cid, err)
 				continue
 			}
@@ -162,7 +180,7 @@ func doLoad(ctx context.Context, cid int, acceptorCli *api.Client, cluster *peer
 		work:
 			for {
 				select {
-				case <-time.After(180 * time.Second):
+				case <-time.After(conf.ExportTimeout):
 					if metricsServer != nil {
 						metricsServer.IncLatencyHistogram(time.Since(t), "peering", "timeout")
 					}
