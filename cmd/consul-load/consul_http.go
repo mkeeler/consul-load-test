@@ -4,10 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/hashicorp/consul/api"
+	"github.com/hashicorp/go-cleanhttp"
 )
 
 // StringValue provides a flag value that's aware if it has been set.
@@ -208,6 +211,26 @@ func (f *HTTPFlags) APIClient() (*api.Client, error) {
 	c := api.DefaultConfig()
 
 	f.MergeOntoConfig(c)
+
+	trans := cleanhttp.DefaultPooledTransport()
+	trans.MaxConnsPerHost = 100
+	trans.ForceAttemptHTTP2 = true
+
+	tlsConf, err := api.SetupTLSConfig(&c.TLSConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if logPath := os.Getenv("CONSUL_TLS_KEY_LOG_FILE"); logPath != "" {
+		kl, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't open the TLS key log file %q for writing: %w", logPath, err)
+		}
+		tlsConf.KeyLogWriter = kl
+	}
+
+	trans.TLSClientConfig = tlsConf
+	c.HttpClient = &http.Client{Transport: trans}
 
 	return api.NewClient(c)
 }

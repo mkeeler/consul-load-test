@@ -9,6 +9,7 @@ import (
 
 	petname "github.com/dustinkirkland/golang-petname"
 	"github.com/hashicorp/consul/api"
+	"github.com/hashicorp/go-hclog"
 	"github.com/mkeeler/consul-load-test/metrics"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
@@ -58,32 +59,36 @@ type peeringCluster struct {
 }
 
 func peeringLoad(ctx context.Context, clientAcceptor *api.Client, conf Config, metricsServer *metrics.MetricsServer) <-chan struct{} {
+	logger := hclog.FromContext(ctx).Named("peering")
+	ctx = hclog.WithContext(ctx, logger)
+
 	done := make(chan struct{})
 
 	go func() {
+		logger.Info("Starting peering load")
+		defer logger.Info("Stopped peering load")
 		defer close(done)
 
 		err := testClient(clientAcceptor)
 		if err != nil {
-			fmt.Printf("STOPPED; error acceptor client: %v\n", err)
+			logger.Error("error creating test client", "error", err)
 			return
 		}
 
 		peeringClis, err := getPeeringClients(conf)
 		if err != nil {
-			log.Errorf("STOPPED; error establishPeering: %v\n", err)
+			logger.Error("error getting peering clients", "error", err)
 			return
 		}
-		log.Debugf("Got %d peering Cli", len(peeringClis))
+		logger.Debug("peering clients created", "count", len(peeringClis))
 
 		peeredClusters, err := establishPeerings(ctx, clientAcceptor, peeringClis, conf)
 		if err != nil {
-			fmt.Printf("STOPPED; error establishPeering: %v\n", err)
+			log.Error("error establishing peerings", "error", err)
 			return
 		}
 
 		generateLoad(ctx, clientAcceptor, peeredClusters, conf, metricsServer)
-		fmt.Println("Finished peering load")
 	}()
 	return done
 }

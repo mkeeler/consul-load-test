@@ -18,6 +18,7 @@ type Target int
 const (
 	TargetKV Target = iota
 	TargetPeering
+	TargetCatalog
 )
 
 func (t Target) GoString() string { return t.String() }
@@ -28,6 +29,8 @@ func (t Target) String() string {
 		return "kv"
 	case TargetPeering:
 		return "peering"
+	case TargetCatalog:
+		return "catalog"
 	default:
 		return ""
 	}
@@ -36,6 +39,7 @@ func (t Target) String() string {
 type Config struct {
 	KV      *KVConfig
 	Peering *PeeringConfig
+	Catalog *CatalogConfig
 	Target  Target
 }
 
@@ -56,6 +60,13 @@ func (c *Config) Normalize() error {
 			return fmt.Errorf("error validating Peering configuration: %w", err)
 		}
 		c.Target = TargetPeering
+	}
+
+	if c.Catalog != nil {
+		if err := c.Catalog.Normalize(); err != nil {
+			return fmt.Errorf("error validating Catalog configuration: %w", err)
+		}
+		c.Target = TargetCatalog
 	}
 
 	return nil
@@ -81,34 +92,4 @@ func ReadConfig(path string) (Config, error) {
 	return conf, nil
 }
 
-// type CatalogConfig struct {
-// 	// NodeUpdateRate is the number of node updates per second
-// 	// A node update may be to update an address or node meta
-// 	NodeUpdateRate int
 
-// 	// ServiceUpdateRate is the number of service updates per second
-// 	// A service update may be to update the address, meta of an existing
-// 	// service or to delete/add a service.
-// 	ServiceUpdateRate int
-
-// 	// NumNodes is the number of nodes to initialize and maintain
-// 	NumNodes int
-// 	// MinServicesPerNode is the minimum number of services to register
-// 	// to a node
-// 	MinServicesPerNode int
-// 	// MaxServicesPerNode is the maximum number of services to register
-// 	// to a node
-// 	MaxServicesPerNode int
-// 	// MinMetaPerNode is the minimum number of node meta entries to
-// 	// attach to a node
-// 	MinMetaPerNode int
-// 	// MaxMetaPerNode is the maximum number of node meta entries to
-// 	// attach to a node
-// 	MaxMetaPerNode int
-// 	// MinMetaPerService is the minimum number of meta entries to
-// 	// attach to a service
-// 	MinMetaPerService int
-// 	// MaxMetaPerService is the maximum number of meta entries to
-// 	// attach to a service
-// 	MaxMetaPerService int
-// }

@@ -2,13 +2,14 @@ package load
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hashicorp/consul/api"
+	"github.com/hashicorp/go-hclog"
 	"github.com/mkeeler/consul-load-test/metrics"
 )
 
 func Load(ctx context.Context, client *api.Client, conf Config, metricsServer *metrics.MetricsServer) <-chan struct{} {
+	logger := hclog.FromContext(ctx)
 	done := make(chan struct{})
 
 	go func() {
@@ -17,13 +18,13 @@ func Load(ctx context.Context, client *api.Client, conf Config, metricsServer *m
 		var loadDone <-chan struct{}
 		switch conf.Target {
 		case TargetKV:
-			fmt.Println("Starting kv load")
 			loadDone = kvLoad(ctx, client, conf, metricsServer)
 		case TargetPeering:
-			fmt.Println("Starting peering load")
 			loadDone = peeringLoad(ctx, client, conf, metricsServer)
+		case TargetCatalog:
+			loadDone = catalogLoad(ctx, client, conf, metricsServer)
 		default:
-			fmt.Println("error: invalid load type:", conf.Target)
+			logger.Error("error: invalid load type:", conf.Target)
 			return
 		}
 
