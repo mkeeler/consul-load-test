@@ -1,35 +1,34 @@
-package load_test
+package peering
 
 import (
 	"testing"
 
-	"github.com/mkeeler/consul-load-test/load"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 )
 
 func TestPeeringConfig_Normalize(t *testing.T) {
 	type testcase struct {
-		config    load.PeeringConfig
+		config    UserConfig
 		expectErr bool
 	}
 	testcases := map[string]testcase{
-		"RegisterLimit must be non-zero": testcase{
-			config: load.PeeringConfig{
+		"RegisterLimit must be non-zero": {
+			config: UserConfig{
 				RegisterLimit: rate.Limit(0.0),
 				NumServices:   1,
 			},
 			expectErr: true,
 		},
-		"NumServices must be non-zero": testcase{
-			config: load.PeeringConfig{
+		"NumServices must be non-zero": {
+			config: UserConfig{
 				RegisterLimit: rate.Limit(1.0),
 				NumServices:   0,
 			},
 			expectErr: true,
 		},
-		"Valid config": testcase{
-			config: load.PeeringConfig{
+		"Valid config": {
+			config: UserConfig{
 				RegisterLimit: rate.Limit(1.0),
 				NumServices:   1,
 			},

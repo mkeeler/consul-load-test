@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -102,7 +101,7 @@ func (c *loadCommand) Run(args []string) int {
 	if c.randSeed == 0 {
 		c.randSeed = time.Now().UnixNano()
 	}
-	rand.Seed(c.randSeed)
+	conf.Seed = c.randSeed
 
 	client, err := c.http.APIClient()
 	if err != nil {
@@ -169,8 +168,13 @@ func (c *loadCommand) Run(args []string) int {
 	}()
 
 	start := time.Now()
-	loadDone := load.Load(ctx, client, conf, metricsServer)
-	logger.Info("Load started")
+	lg := load.NewLoadGenerator(client, logger, conf, metricsServer)
+	loadDone := make(chan struct{})
+	go func() {
+		defer close(loadDone)
+		logger.Info("Load starting")
+		lg.Run(ctx)
+	}()
 
 	<-loadDone
 	logger.Info("Load completed")
