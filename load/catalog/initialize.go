@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/hashicorp/consul/api"
 	"github.com/mkeeler/consul-load-test/random/ip"
@@ -21,6 +22,9 @@ type serviceInstance struct {
 	*node
 	serviceName string
 	serviceID   string
+	kind        api.ServiceKind
+	port        int
+	proxy       *api.AgentServiceConnectProxyConfig
 }
 
 func (instance *serviceInstance) getID() string {
@@ -87,6 +91,7 @@ func (lg *LoadGenerator) initializeData() {
 				node:        node,
 				serviceName: svcName,
 				serviceID:   fmt.Sprintf("%s-%d", svcName, svcIndex),
+				port:        8443,
 			}
 
 			lg.serviceInstances = append(lg.serviceInstances, instance)
@@ -100,6 +105,30 @@ func (lg *LoadGenerator) initializeData() {
 					checkID:         fmt.Sprintf("%s-check-%d", instance.serviceID, svcCheckIdx),
 				})
 			}
+
+			// Generate the corresponding
+			if lg.conf.IncludeConnectSidecars {
+				proxyInstance := &serviceInstance{
+					kind:        api.ServiceKindConnectProxy,
+					node:        node,
+					serviceName: fmt.Sprintf("%s-sidecar-proxy", instance.serviceName),
+					serviceID:   fmt.Sprintf("%s-sidecar-proxy", instance.serviceID),
+					port:        9443,
+					proxy: &api.AgentServiceConnectProxyConfig{
+						DestinationServiceName: instance.serviceName,
+						DestinationServiceID:   instance.serviceID,
+						LocalServicePort:       8443,
+						LocalServiceAddress:    "127.0.0.1",
+					},
+				}
+				lg.serviceInstances = append(lg.serviceInstances, proxyInstance)
+
+				lg.checks = append(lg.checks, &check{
+					node:            node,
+					serviceInstance: proxyInstance,
+					checkID:         fmt.Sprintf("%s-check", proxyInstance.serviceID),
+				})
+			}
 		}
 	}
 }
@@ -108,20 +137,62 @@ func (lg *LoadGenerator) pushAllData(ctx context.Context) error {
 	lg.Logger.Info("registering all Consul resources")
 	defer lg.Logger.Info("finished registering all Consul resources")
 
+	var wg sync.WaitGroup
 	lg.Logger.Info("registering all nodes with Consul", "count", len(lg.nodes))
 	for _, node := range lg.nodes {
-		lg.registerNode(ctx, node)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			lg.registerNode(ctx, node)
+		}()
+	}
+
+	// wait for all nodes to be registered
+	wg.Wait()
+
+	if ctxIsDone(ctx) {
+		return ctx.Err()
 	}
 
 	lg.Logger.Info("registering all service instances with Consul", "count", len(lg.serviceInstances))
 	for _, svc := range lg.serviceInstances {
-		lg.registerService(ctx, svc)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			lg.registerService(ctx, svc)
+		}()
+	}
+
+	// wait for all services to be registered
+	wg.Wait()
+
+	if ctxIsDone(ctx) {
+		return ctx.Err()
 	}
 
 	lg.Logger.Info("registering all checks with Consul", "count", len(lg.checks))
 	for _, check := range lg.checks {
-		lg.registerCheck(ctx, check, api.HealthPassing)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			lg.registerCheck(ctx, check, api.HealthPassing)
+		}()
+	}
+
+	wg.Wait()
+
+	if ctxIsDone(ctx) {
+		return ctx.Err()
 	}
 
 	return nil
+}
+
+func ctxIsDone(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
 }

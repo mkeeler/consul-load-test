@@ -36,6 +36,9 @@ type UserConfig struct {
 	// from
 	NumServices int
 
+	// IncludeConnectSidecars will also register sidecar proxies alongside each service instance
+	IncludeConnectSidecars bool
+
 	// MinServicesPerNode is the minimum number of services to register
 	// to a node
 	MinServicesPerNode int

@@ -53,15 +53,18 @@ func (lg *LoadGenerator) registerService(ctx context.Context, instance *serviceI
 		Node:           instance.node.name,
 		SkipNodeUpdate: true,
 		Service: &api.AgentService{
+			Kind:    instance.kind,
 			ID:      instance.serviceID,
 			Service: instance.serviceName,
 			Meta:    generateMeta(lg.serviceRng, lg.conf.MinMetaPerService, lg.conf.MaxMetaPerService),
-			Port:    8443,
+			Port:    instance.port,
+			Proxy:   instance.proxy,
 		},
 	}
 
 	opts := &api.WriteOptions{}
-	_, err := lg.Client.Catalog().Register(reg, opts.WithContext(ctx))
+	opts = opts.WithContext(ctx)
+	_, err := lg.Client.Catalog().Register(reg, opts)
 	return err
 }
 
